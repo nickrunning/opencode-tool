@@ -4,15 +4,23 @@
 
 ## 安装
 
-```bash
-ln -sf /path/to/oc ~/.local/bin/oc
-```
-
-可选：在 `~/.zshrc` 或 `~/.bashrc` 中添加 `omo` 快捷函数，快速开关 oh-my-opencode 插件：
+一键安装（克隆后本地执行）：
 
 ```bash
-omo() { if [ "$1" = "on" ]; then oc plugin enable oh-my-opencode; elif [ "$1" = "off" ]; then oc plugin disable oh-my-opencode; else oc plugin list; fi; }
+git clone https://github.com/nickrunning/opencode-tool.git
+cd opencode-tool
+bash install.sh
 ```
+
+或远程安装：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/nickrunning/opencode-tool/master/install.sh | bash
+```
+
+安装脚本会自动：
+- 创建 `~/.local/bin/oc`（本地为软链接，远程为下载）
+- 在 `~/.bashrc` 和 `~/.zshrc` 中添加 `omo` 快捷函数
 
 ```bash
 omo on                          # 启用 oh-my-opencode
