@@ -23,19 +23,26 @@ import re
 import sys
 import copy
 
-CONFIG_PATH = os.path.expanduser("~/.config/opencode/opencode.json")
+CONFIG_DIR = os.path.expanduser("~/.config/opencode")
+_CONFIG_CANDIDATES = ["opencode.json", "opencode.jsonc"]
+
+
+def _resolve_config_path():
+    for name in _CONFIG_CANDIDATES:
+        p = os.path.join(CONFIG_DIR, name)
+        if os.path.isfile(p):
+            return p
+    return os.path.join(CONFIG_DIR, _CONFIG_CANDIDATES[0])
 
 # ─── JSONC 行级操作引擎 ──────────────────────────────────────────────
 
 def read_config_lines():
-    """读取配置文件所有行"""
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+    with open(_resolve_config_path(), "r", encoding="utf-8") as f:
         return f.readlines()
 
 
 def write_config_lines(lines):
-    """写回配置文件"""
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+    with open(_resolve_config_path(), "w", encoding="utf-8") as f:
         f.writelines(lines)
 
 
@@ -107,7 +114,7 @@ def strip_jsonc(text):
 def parse_config():
     """只读解析配置为 dict（去注释后 parse）"""
     import json
-    raw = open(CONFIG_PATH, "r", encoding="utf-8").read()
+    raw = open(_resolve_config_path(), "r", encoding="utf-8").read()
     clean = strip_jsonc(raw)
     return json.loads(clean)
 
