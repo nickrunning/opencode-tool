@@ -4,6 +4,18 @@
 
 快速切换 OpenCode 配置项的 CLI 工具。直接操作 JSONC 配置文件，完整保留注释、缩进和 trailing commas。
 
+## 为什么需要 `omo` 命令？
+
+[oh-my-opencode](https://github.com/nickelchen/oh-my-opencode) 插件为 OpenCode 提供了强大的增强能力，但代价是显著增加系统提示词的体积。在 `build` 和 `plan` 等轻量模式下，过大的系统提示词会拖慢响应、浪费 token，体验不佳。
+
+`omo` 命令让你在终端一键切换：需要完整能力时 `omo on`，切到轻量模式前 `omo off`，无需手动编辑配置文件。
+
+```bash
+omo off                         # 关闭 omo → 轻量模式，适合 build/plan
+omo on                          # 开启 omo → 完整增强模式
+omo                             # 查看当前插件状态
+```
+
 ## 安装
 
 一键安装（克隆后本地执行）：
@@ -23,12 +35,6 @@ curl -fsSL https://raw.githubusercontent.com/nickrunning/opencode-tool/master/in
 安装脚本会自动：
 - 创建 `~/.local/bin/oc`（本地为软链接，远程为下载）
 - 在 `~/.bashrc` 和 `~/.zshrc` 中添加 `omo` 快捷函数
-
-```bash
-omo on                          # 启用 oh-my-opencode
-omo off                         # 禁用 oh-my-opencode
-omo                             # 查看所有插件状态
-```
 
 ## 用法
 

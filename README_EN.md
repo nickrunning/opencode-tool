@@ -4,6 +4,18 @@
 
 A CLI tool for quickly toggling OpenCode configuration options. Directly edits JSONC config files while fully preserving comments, indentation, and trailing commas.
 
+## Why `omo`?
+
+The [oh-my-opencode](https://github.com/nickelchen/oh-my-opencode) plugin supercharges OpenCode with powerful enhancements, but it significantly increases the system prompt size. In lightweight modes like `build` and `plan`, this overhead slows down responses and wastes tokens.
+
+`omo` lets you toggle the plugin from your terminal in one keystroke — `omo off` before switching to a lightweight mode, `omo on` when you need full power — no manual config editing required.
+
+```bash
+omo off                         # Disable omo → lightweight mode for build/plan
+omo on                          # Enable omo → full enhanced mode
+omo                             # Check current plugin status
+```
+
 ## Installation
 
 One-click install (clone and run locally):
@@ -23,12 +35,6 @@ curl -fsSL https://raw.githubusercontent.com/nickrunning/opencode-tool/master/in
 The install script will automatically:
 - Create `~/.local/bin/oc` (symlink locally, download remotely)
 - Add the `omo` shortcut function to `~/.bashrc` and `~/.zshrc`
-
-```bash
-omo on                          # Enable oh-my-opencode
-omo off                         # Disable oh-my-opencode
-omo                             # List all plugins
-```
 
 ## Usage
 
