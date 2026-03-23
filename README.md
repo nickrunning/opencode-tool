@@ -1,5 +1,7 @@
 # oc — OpenCode 配置命令行工具
 
+[English](README_EN.md)
+
 快速切换 OpenCode 配置项的 CLI 工具。直接操作 JSONC 配置文件，完整保留注释、缩进和 trailing commas。
 
 ## 安装
