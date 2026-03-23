@@ -1,24 +1,24 @@
-# oc — OpenCode 配置命令行工具
+# oc — OpenCode Config CLI
 
-[English](README_EN.md)
+[中文文档](README_CN.md)
 
-快速切换 OpenCode 配置项的 CLI 工具。直接操作 JSONC 配置文件，完整保留注释、缩进和 trailing commas。
+A CLI tool for quickly toggling OpenCode configuration options. Directly edits JSONC config files while fully preserving comments, indentation, and trailing commas.
 
-## 为什么需要 `omo` 命令？
+## Why `omo`?
 
-[oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent)（omo）插件为 OpenCode 提供了强大的增强能力，但代价是显著增加系统提示词的体积。在 `build` 和 `plan` 等轻量模式下，过大的系统提示词会拖慢响应、浪费 token，体验不佳。
+The [oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent) (omo) plugin supercharges OpenCode with powerful enhancements, but it significantly increases the system prompt size. In lightweight modes like `build` and `plan`, this overhead slows down responses and wastes tokens.
 
-`omo` 命令让你在终端一键切换：需要完整能力时 `omo on`，切到轻量模式前 `omo off`，无需手动编辑配置文件。
+`omo` lets you toggle the plugin from your terminal in one keystroke — `omo off` before switching to a lightweight mode, `omo on` when you need full power — no manual config editing required.
 
 ```bash
-omo off                         # 关闭 omo → 轻量模式，适合 build/plan
-omo on                          # 开启 omo → 完整增强模式
-omo                             # 查看当前插件状态
+omo off                         # Disable omo → lightweight mode for build/plan
+omo on                          # Enable omo → full enhanced mode
+omo                             # Check current plugin status
 ```
 
-## 安装
+## Installation
 
-一键安装（克隆后本地执行）：
+One-click install (clone and run locally):
 
 ```bash
 git clone https://github.com/nickrunning/opencode-tool.git
@@ -26,50 +26,50 @@ cd opencode-tool
 bash install.sh
 ```
 
-或远程安装：
+Or install remotely:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nickrunning/opencode-tool/master/install.sh | bash
 ```
 
-安装脚本会自动：
-- 创建 `~/.local/bin/oc`（本地为软链接，远程为下载）
-- 在 `~/.bashrc` 和 `~/.zshrc` 中添加 `omo` 快捷函数
+The install script will automatically:
+- Create `~/.local/bin/oc` (symlink locally, download remotely)
+- Add the `omo` shortcut function to `~/.bashrc` and `~/.zshrc`
 
-## 用法
+## Usage
 
-### 插件管理
-
-```bash
-oc plugin list                  # 列出所有插件及启用/禁用状态
-oc plugin toggle <name>         # 切换插件（注释 ↔ 取消注释）
-oc plugin enable <name>         # 启用指定插件
-oc plugin disable <name>        # 禁用指定插件
-```
-
-### Provider 管理
+### Plugin Management
 
 ```bash
-oc provider list                # 列出所有 provider 及状态
-oc provider toggle <name>       # 在 disabled_providers 中添加/移除
-oc provider enable <name>       # 启用（从 disabled_providers 移除）
-oc provider disable <name>      # 禁用（添加到 disabled_providers）
+oc plugin list                  # List all plugins with status
+oc plugin toggle <name>         # Toggle plugin (comment ↔ uncomment)
+oc plugin enable <name>         # Enable a plugin
+oc plugin disable <name>        # Disable a plugin
 ```
 
-### 模型切换
+### Provider Management
 
 ```bash
-oc model                        # 查看当前模型
-oc model list                   # 列出所有可用模型
-oc model set <model_id>         # 切换主模型
-oc model set-small <model_id>   # 切换小模型
-oc model <model_id>             # 快速切换主模型（简写）
+oc provider list                # List all providers with status
+oc provider toggle <name>       # Add/remove from disabled_providers
+oc provider enable <name>       # Remove from disabled_providers
+oc provider disable <name>      # Add to disabled_providers
 ```
 
-## 设计
+### Model Switching
 
-- **行级文本操作**：所有写入操作直接编辑文本行，不做 parse → dump，因此注释、空行、缩进风格原样保留
-- **JSONC 感知解析**：只读操作使用状态机式 strip（正确跳过字符串内的 `//`，如 URL），再交给标准 `json.loads`
-- **插件 toggle**：通过注释/取消注释 `"plugin"` 数组中的对应行实现
-- **Provider toggle**：通过在 `"disabled_providers"` 数组中增删条目实现
-- **零依赖**：纯 Python 3 标准库，无需 pip install
+```bash
+oc model                        # Show current model
+oc model list                   # List all available models
+oc model set <model_id>         # Switch primary model
+oc model set-small <model_id>   # Switch small model
+oc model <model_id>             # Quick switch primary model
+```
+
+## Design
+
+- **Line-level editing**: All writes edit text lines directly — no parse → dump — so comments, blank lines, and indentation are preserved as-is
+- **JSONC-aware parsing**: Read-only operations use a state-machine stripper (correctly skips `//` inside strings like URLs) before `json.loads`
+- **Plugin toggle**: Comments/uncomments the corresponding line in the `"plugin"` array
+- **Provider toggle**: Adds/removes entries in the `"disabled_providers"` array
+- **Zero dependencies**: Pure Python 3 stdlib, no pip install needed
