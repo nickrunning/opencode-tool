@@ -6,7 +6,7 @@
 
 ## 为什么需要 `omo` 命令？
 
-[oh-my-opencode](https://github.com/nickelchen/oh-my-opencode) 插件为 OpenCode 提供了强大的增强能力，但代价是显著增加系统提示词的体积。在 `build` 和 `plan` 等轻量模式下，过大的系统提示词会拖慢响应、浪费 token，体验不佳。
+[oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent)（omo）插件为 OpenCode 提供了强大的增强能力，但代价是显著增加系统提示词的体积。在 `build` 和 `plan` 等轻量模式下，过大的系统提示词会拖慢响应、浪费 token，体验不佳。
 
 `omo` 命令让你在终端一键切换：需要完整能力时 `omo on`，切到轻量模式前 `omo off`，无需手动编辑配置文件。
 

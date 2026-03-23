@@ -6,7 +6,7 @@ A CLI tool for quickly toggling OpenCode configuration options. Directly edits J
 
 ## Why `omo`?
 
-The [oh-my-opencode](https://github.com/nickelchen/oh-my-opencode) plugin supercharges OpenCode with powerful enhancements, but it significantly increases the system prompt size. In lightweight modes like `build` and `plan`, this overhead slows down responses and wastes tokens.
+The [oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent) (omo) plugin supercharges OpenCode with powerful enhancements, but it significantly increases the system prompt size. In lightweight modes like `build` and `plan`, this overhead slows down responses and wastes tokens.
 
 `omo` lets you toggle the plugin from your terminal in one keystroke — `omo off` before switching to a lightweight mode, `omo on` when you need full power — no manual config editing required.
 
