@@ -1,0 +1,519 @@
+#!/usr/bin/env python3
+"""
+oc — OpenCode 配置命令行工具
+
+支持 JSONC (JSON with Comments + trailing commas) 的原地编辑，
+所有操作基于行级文本处理，完整保留注释、格式和空白。
+
+用法:
+    oc plugin list                  列出所有插件及状态
+    oc plugin toggle <name>         启用/禁用指定插件
+    oc plugin enable <name>         启用指定插件
+    oc plugin disable <name>        禁用指定插件
+    oc provider list                列出所有 provider 及状态
+    oc provider toggle <name>       在 disabled_providers 中添加/移除
+    oc provider enable <name>       从 disabled_providers 中移除
+    oc provider disable <name>      添加到 disabled_providers
+    oc model [new_model]            查看或切换当前模型
+    oc model list                   列出所有可用模型
+"""
+
+import os
+import re
+import sys
+import copy
+
+CONFIG_PATH = os.path.expanduser("~/.config/opencode/opencode.json")
+
+# ─── JSONC 行级操作引擎 ──────────────────────────────────────────────
+
+def read_config_lines():
+    """读取配置文件所有行"""
+    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+        return f.readlines()
+
+
+def write_config_lines(lines):
+    """写回配置文件"""
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        f.writelines(lines)
+
+
+def is_commented(line):
+    """判断一行是否被注释（去掉前导空白后以 // 开头）"""
+    return line.lstrip().startswith("//")
+
+
+def comment_line(line):
+    """注释一行：在内容前加 // ，保留缩进"""
+    m = re.match(r'^(\s*)', line)
+    indent = m.group(1) if m else ''
+    content = line[len(indent):]
+    return f"{indent}//{content}"
+
+
+def uncomment_line(line):
+    """取消注释一行：移除第一个 // ，保留缩进"""
+    m = re.match(r'^(\s*)//\s?(.*)', line, re.DOTALL)
+    if m:
+        return f"{m.group(1)}{m.group(2)}"
+    return line
+
+
+def strip_jsonc(text):
+    """
+    去除 JSONC 文本中的注释和 trailing commas，返回可被标准 json 解析的文本。
+    仅用于只读解析（如 list 命令），写操作一律走行级编辑。
+    正确跳过字符串内的 // 和 /* （如 URL 中的 https://）。
+    """
+    result = []
+    i = 0
+    n = len(text)
+    while i < n:
+        # 字符串：跳过整个引号内容
+        if text[i] == '"':
+            j = i + 1
+            while j < n:
+                if text[j] == '\\':
+                    j += 2  # 跳过转义字符
+                    continue
+                if text[j] == '"':
+                    j += 1
+                    break
+                j += 1
+            result.append(text[i:j])
+            i = j
+        # 单行注释
+        elif text[i:i+2] == '//':
+            # 跳到行尾
+            while i < n and text[i] != '\n':
+                i += 1
+        # 块注释
+        elif text[i:i+2] == '/*':
+            i += 2
+            while i < n - 1 and text[i:i+2] != '*/':
+                i += 1
+            i += 2  # 跳过 */
+        else:
+            result.append(text[i])
+            i += 1
+
+    cleaned = ''.join(result)
+    # 去掉 trailing commas: ,] 或 ,}
+    cleaned = re.sub(r',\s*([}\]])', r'\1', cleaned)
+    return cleaned
+
+
+def parse_config():
+    """只读解析配置为 dict（去注释后 parse）"""
+    import json
+    raw = open(CONFIG_PATH, "r", encoding="utf-8").read()
+    clean = strip_jsonc(raw)
+    return json.loads(clean)
+
+
+# ─── 查找配置区域 ──────────────────────────────────────────────────
+
+def find_array_block(lines, key):
+    """
+    找到顶层 key 对应的 JSON 数组块（如 "plugin": [...]）。
+    返回 (start, end)，start 是 [ 所在行号，end 是 ] 所在行号（含）。
+    """
+    pattern = re.compile(rf'^\s*"?{re.escape(key)}"?\s*:\s*\[')
+    start = None
+    for i, line in enumerate(lines):
+        # 跳过注释行
+        stripped = line.lstrip()
+        if stripped.startswith("//") or stripped.startswith("/*"):
+            continue
+        if pattern.search(line):
+            start = i
+            break
+    if start is None:
+        return None, None
+
+    # 找到匹配的 ]
+    depth = 0
+    for i in range(start, len(lines)):
+        depth += lines[i].count('[') - lines[i].count(']')
+        if depth == 0:
+            return start, i
+    return start, len(lines) - 1
+
+
+# ─── Plugin 命令 ──────────────────────────────────────────────────
+
+def plugin_list():
+    """列出所有插件及其启用状态"""
+    lines = read_config_lines()
+    start, end = find_array_block(lines, "plugin")
+    if start is None:
+        print("未找到 plugin 配置块")
+        return
+
+    plugins = []
+    for i in range(start + 1, end):
+        line = lines[i]
+        stripped = line.strip()
+        if not stripped or stripped == ']' or stripped == '],':
+            continue
+
+        commented = is_commented(line)
+        # 提取插件名
+        # 匹配注释和非注释行中的引号字符串
+        m = re.search(r'"([^"]+)"', line)
+        if m:
+            name = m.group(1)
+            status = "\033[90m disabled\033[0m" if commented else "\033[32m enabled \033[0m"
+            plugins.append((name, status, commented))
+
+    if not plugins:
+        print("没有配置任何插件")
+        return
+
+    print(f"\n  {'插件名':<50} 状态")
+    print(f"  {'─' * 50} ──────")
+    for name, status, _ in plugins:
+        print(f"  {name:<50} {status}")
+    print()
+
+
+def _plugin_set(name, action):
+    """
+    action: 'toggle' | 'enable' | 'disable'
+    在 plugin 数组中找到匹配的行并执行操作。
+    """
+    lines = read_config_lines()
+    start, end = find_array_block(lines, "plugin")
+    if start is None:
+        print("错误: 未找到 plugin 配置块", file=sys.stderr)
+        sys.exit(1)
+
+    target_line = None
+    for i in range(start + 1, end):
+        if name in lines[i]:
+            target_line = i
+            break
+
+    if target_line is None:
+        # 如果是 enable 且不存在，添加到数组末尾
+        if action == 'enable':
+            # 在 ] 前插入新行
+            indent = "    "  # 匹配现有缩进
+            new_line = f'{indent}"{name}",\n'
+            lines.insert(end, new_line)
+            write_config_lines(lines)
+            print(f"✓ 已添加并启用插件: {name}")
+            return
+        print(f"错误: 未找到插件 '{name}'", file=sys.stderr)
+        sys.exit(1)
+
+    commented = is_commented(lines[target_line])
+
+    if action == 'toggle':
+        if commented:
+            lines[target_line] = uncomment_line(lines[target_line])
+            print(f"✓ 已启用插件: {name}")
+        else:
+            lines[target_line] = comment_line(lines[target_line])
+            print(f"✓ 已禁用插件: {name}")
+    elif action == 'enable':
+        if commented:
+            lines[target_line] = uncomment_line(lines[target_line])
+            print(f"✓ 已启用插件: {name}")
+        else:
+            print(f"插件已处于启用状态: {name}")
+            return
+    elif action == 'disable':
+        if not commented:
+            lines[target_line] = comment_line(lines[target_line])
+            print(f"✓ 已禁用插件: {name}")
+        else:
+            print(f"插件已处于禁用状态: {name}")
+            return
+
+    write_config_lines(lines)
+
+
+# ─── Provider 命令 ──────────────────────────────────────────────────
+
+def provider_list():
+    """列出所有 provider 及其状态"""
+    config = parse_config()
+    disabled = set(config.get("disabled_providers", []))
+    providers = config.get("provider", {})
+
+    print(f"\n  {'Provider':<30} 状态")
+    print(f"  {'─' * 30} ──────")
+    for name in providers:
+        if name in disabled:
+            status = "\033[90m disabled\033[0m"
+        else:
+            status = "\033[32m enabled \033[0m"
+        print(f"  {name:<30} {status}")
+
+    # 检查被整块注释掉的 provider（行级扫描）
+    # 顶层 provider 注释格式: `    // "name": {`（4空格 + // + 恰好1空格 + "）
+    # 嵌套行格式:              `    //   "key": {`（4空格 + // + 多空格 + "）
+    lines = read_config_lines()
+    in_provider_block = False
+    depth = 0
+    commented_providers = []
+    for i, line in enumerate(lines):
+        stripped = line.lstrip()
+        if not in_provider_block:
+            if re.match(r'\s*"provider"\s*:\s*\{', line):
+                in_provider_block = True
+                depth = line.count('{') - line.count('}')
+            continue
+        depth += line.count('{') - line.count('}')
+        # 只匹配顶层: 4空格 + // + 恰好1空格 + "name": {
+        m = re.match(r'    // "([^"]+)"\s*:\s*\{', line)
+        if m:
+            pname = m.group(1)
+            if pname not in providers:
+                commented_providers.append(pname)
+        if depth <= 0:
+            break
+
+    for name in commented_providers:
+        status = "\033[90m commented\033[0m"
+        print(f"  {name:<30} {status}")
+    print()
+
+
+def _provider_set(name, action):
+    """
+    在 disabled_providers 数组中添加/移除 provider 名称。
+    action: 'toggle' | 'enable' | 'disable'
+    """
+    lines = read_config_lines()
+    start, end = find_array_block(lines, "disabled_providers")
+
+    if start is None:
+        print("错误: 未找到 disabled_providers 配置块", file=sys.stderr)
+        sys.exit(1)
+
+    # 检查是否已在 disabled 列表中
+    target_line = None
+    for i in range(start + 1, end):
+        if f'"{name}"' in lines[i]:
+            target_line = i
+            break
+
+    is_disabled = target_line is not None
+
+    if action == 'toggle':
+        action = 'enable' if is_disabled else 'disable'
+
+    if action == 'enable':
+        if not is_disabled:
+            print(f"Provider 已处于启用状态: {name}")
+            return
+        # 移除该行
+        lines.pop(target_line)
+        write_config_lines(lines)
+        print(f"✓ 已启用 provider: {name}")
+
+    elif action == 'disable':
+        if is_disabled:
+            print(f"Provider 已处于禁用状态: {name}")
+            return
+        # 在 ] 前插入
+        indent = "    "
+        new_line = f'{indent}"{name}",\n'
+        lines.insert(end, new_line)
+        write_config_lines(lines)
+        print(f"✓ 已禁用 provider: {name}")
+
+
+# ─── Model 命令 ──────────────────────────────────────────────────
+
+def model_show():
+    """显示当前模型"""
+    config = parse_config()
+    print(f"\n  model:       {config.get('model', '(未设置)')}")
+    print(f"  small_model: {config.get('small_model', '(未设置)')}")
+    print()
+
+
+def model_list():
+    """列出所有可用模型"""
+    config = parse_config()
+    current = config.get("model", "")
+    small = config.get("small_model", "")
+    disabled = set(config.get("disabled_providers", []))
+
+    print(f"\n  当前: model={current}  small_model={small}\n")
+    print(f"  {'模型 ID':<45} Provider")
+    print(f"  {'─' * 45} {'─' * 20}")
+
+    for pname, pconf in config.get("provider", {}).items():
+        marker = " \033[90m(disabled)\033[0m" if pname in disabled else ""
+        # 两种模型定义方式
+        if "whitelist" in pconf:
+            for mid in pconf["whitelist"]:
+                full_id = f"{pname}/{mid}"
+                tag = ""
+                if full_id == current:
+                    tag = " \033[33m← model\033[0m"
+                elif full_id == small:
+                    tag = " \033[36m← small\033[0m"
+                print(f"  {full_id:<45} {pname}{marker}{tag}")
+        if "models" in pconf:
+            for mid in pconf["models"]:
+                full_id = f"{pname}/{mid}"
+                tag = ""
+                if full_id == current:
+                    tag = " \033[33m← model\033[0m"
+                elif full_id == small:
+                    tag = " \033[36m← small\033[0m"
+                print(f"  {full_id:<45} {pname}{marker}{tag}")
+    print()
+
+
+def model_set(new_model, field="model"):
+    """切换模型"""
+    lines = read_config_lines()
+    pattern = re.compile(rf'^(\s*"{field}"\s*:\s*)"([^"]*)"')
+
+    for i, line in enumerate(lines):
+        if is_commented(line):
+            continue
+        m = pattern.match(line)
+        if m:
+            old_model = m.group(2)
+            lines[i] = pattern.sub(rf'\1"{new_model}"', line)
+            write_config_lines(lines)
+            print(f"✓ {field}: {old_model} → {new_model}")
+            return
+
+    print(f"错误: 未找到 {field} 配置项", file=sys.stderr)
+    sys.exit(1)
+
+
+# ─── CLI 入口 ──────────────────────────────────────────────────
+
+USAGE = """\
+用法: oc <command> [subcommand] [args]
+
+命令:
+  plugin list                  列出所有插件及状态
+  plugin toggle <name>         启用/禁用指定插件
+  plugin enable <name>         启用指定插件
+  plugin disable <name>        禁用指定插件
+
+  provider list                列出所有 provider 及状态
+  provider toggle <name>       在 disabled_providers 中添加/移除
+  provider enable <name>       从 disabled_providers 中移除
+  provider disable <name>      添加到 disabled_providers
+
+  model                        查看当前模型
+  model list                   列出所有可用模型
+  model set <model_id>         切换主模型
+  model set-small <model_id>   切换小模型
+
+别名:
+  omo on                       启用 oh-my-opencode 插件
+  omo off                      禁用 oh-my-opencode 插件
+  omo                          查看 oh-my-opencode 状态
+"""
+
+
+def main():
+    args = sys.argv[1:]
+
+    if not args or args[0] in ("-h", "--help", "help"):
+        print(USAGE)
+        sys.exit(0)
+
+    cmd = args[0]
+
+    # ── omo 别名 ──
+    if cmd == "omo":
+        if len(args) < 2:
+            # 无参数：显示当前状态
+            lines = read_config_lines()
+            start, end = find_array_block(lines, "plugin")
+            if start is not None:
+                for i in range(start + 1, end):
+                    if "oh-my-opencode" in lines[i]:
+                        if is_commented(lines[i]):
+                            print("oh-my-opencode: \033[90moff\033[0m")
+                        else:
+                            print("oh-my-opencode: \033[32mon\033[0m")
+                        sys.exit(0)
+            print("oh-my-opencode: 未配置")
+            sys.exit(0)
+        sub = args[1]
+        if sub == "on":
+            _plugin_set("oh-my-opencode", "enable")
+        elif sub == "off":
+            _plugin_set("oh-my-opencode", "disable")
+        else:
+            print("用法: oc omo [on|off]")
+            sys.exit(1)
+        return
+
+    # ── plugin ──
+    if cmd == "plugin":
+        if len(args) < 2:
+            print("用法: oc plugin <list|toggle|enable|disable> [name]")
+            sys.exit(1)
+        sub = args[1]
+        if sub == "list":
+            plugin_list()
+        elif sub in ("toggle", "enable", "disable"):
+            if len(args) < 3:
+                print(f"用法: oc plugin {sub} <plugin_name>")
+                sys.exit(1)
+            _plugin_set(args[2], sub)
+        else:
+            print(f"未知子命令: plugin {sub}")
+            sys.exit(1)
+
+    # ── provider ──
+    elif cmd == "provider":
+        if len(args) < 2:
+            print("用法: oc provider <list|toggle|enable|disable> [name]")
+            sys.exit(1)
+        sub = args[1]
+        if sub == "list":
+            provider_list()
+        elif sub in ("toggle", "enable", "disable"):
+            if len(args) < 3:
+                print(f"用法: oc provider {sub} <provider_name>")
+                sys.exit(1)
+            _provider_set(args[2], sub)
+        else:
+            print(f"未知子命令: provider {sub}")
+            sys.exit(1)
+
+    # ── model ──
+    elif cmd == "model":
+        if len(args) < 2:
+            model_show()
+        elif args[1] == "list":
+            model_list()
+        elif args[1] == "set":
+            if len(args) < 3:
+                print("用法: oc model set <model_id>")
+                sys.exit(1)
+            model_set(args[2], "model")
+        elif args[1] == "set-small":
+            if len(args) < 3:
+                print("用法: oc model set-small <model_id>")
+                sys.exit(1)
+            model_set(args[2], "small_model")
+        else:
+            # 允许 oc model <model_id> 直接切换
+            model_set(args[1], "model")
+
+    else:
+        print(f"未知命令: {cmd}")
+        print(USAGE)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
